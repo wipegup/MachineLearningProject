@@ -1,0 +1,104 @@
+---
+title: "Machine Learning Project"
+output:
+  html_document:
+    keep_md: true
+---
+Activity Tracker Machine Learning
+=======
+
+The goal of this project is to predict the quality of movements performed by group of individuals given fitness tracker data of other people and their quality of movement, denoted by a "classe" variable.
+To this end two models will be built and tested, one using a bagging approach, and the other built using a random forest.
+
+For more specific information on the data used, please see http://groupware.les.inf.puc-rio.br/har and the weight lifting data set.
+
+## Data Grab and Preprocess
+
+First download the data and read into R, the data we will use for model creating and testing will be saved under "working" and the data of our unknown test cases will be assigned to "assignment"
+
+```{r Data Grab and Read, message = FALSE}
+library(caret)
+library(plyr)
+if(!file.exists(".\\data")){dir.create(".\\data")}
+
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+              ".\\data\\pml-training.csv")
+working <- read.csv(".\\data\\pml-training.csv")
+
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+              ".\\data\\pml-testing.csv")
+assignment <- read.csv(".\\data\\pml-testing.csv")
+
+```
+
+From the two data sets we will removed variables irrlevant to prediction which simply give date, time and subject contexts.
+Then create testing and training set from data, using 70% of the "working" data for our "training" set and 30% for our "testing" set.
+```{r partition data}
+#Before partition, remove columns irrelevant to prediction, which are "x", "user_name", "raw_timestamp_part_ 1", "raw_timestamp_part_2", and "cvtd_timestamp"
+working <- working[ , -(1:5)]
+assignment <- assignment[ , -(1:5)]
+
+
+set.seed(1738)
+tIndex <- createDataPartition(working$classe, p = .7, list = FALSE)
+training <- working[tIndex,]
+testing <- working[-tIndex,]
+```
+
+We are now left with three data sets, a "training" set for model training, a "testing" set for looking at out-of-sample error, and finally the "assignment" data set for the coursera quiz. For preprocessing we will discard variable that are mostly NA, and variables with near-zero variance. Those two categories of variables will be determined with the "training" set, but removed from all three datasets.
+
+```{r relevant variables}
+# discard variables with mostly "NA" values
+mostlyNA <- c()
+
+for(i in 1:dim(training)[2]) {
+    if(mean(is.na(training[ , i])>.8)) {
+        mostlyNA <- c(mostlyNA,i)
+    }
+}
+
+training <- training[ , -mostlyNA]
+testing <- testing[ , -mostlyNA]
+assignment <- assignment[ , -mostlyNA]
+
+# discard variables with near zero variance
+nzvar <- nearZeroVar(training)
+training <- training[ , -nzvar]
+testing <- testing[ , -nzvar]
+assignment <- assignment[ , -nzvar]
+```
+
+## Model creation and testing
+
+I will start by building two models, one with "bagging" and the other with a random forest.
+Train control used with the random forest to reduce building time, specifying only 3-fold cross-validation
+
+With both models, predict on the training set in order to find in-sample error; displaying a confusion matrix.
+
+``` {r model creation, message = FALSE}
+library(adabag)
+library(randomForest)
+bagModel <- train(classe ~ . , method = "AdaBag" , data = training)
+trc = trainControl(method = "cv", number = 3, verboseIter = FALSE)
+rfModel <- train(classe ~ . , method = "rf" , data = training, trControl=trc)
+
+predB <- predict(bagModel , training)
+predR <- predict(rfModel , training)
+
+confusionMatrix(predB , training$classe)
+confusionMatrix(predR , training$classe)
+```
+
+While the Bagging model did notperform well, the random forest model performed very well, with accuracy of 1 on the training model. 
+Next check out-of-sample error for the random forest model on the "testing set"
+
+```{r OOS Error}
+predRT <- predict(rfModel, testing)
+confusionMatrix(predRT , testing$classe)
+```
+With the 99% accuracy out-of-sample I will use this model to predict on the assignment data.
+
+```{r Assignment}
+predRA <- predict(rfModel, assignment)
+```
+predRA resulted in 100% on the quiz.
